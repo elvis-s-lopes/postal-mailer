@@ -50,7 +50,7 @@ trait Postal
      * @param string $strParams
      * @return array
      */
-    public static function sgDecode($strParams)
+    public static function ptDecode($strParams)
     {
         if (!is_string($strParams)) {
             return (array)$strParams;
