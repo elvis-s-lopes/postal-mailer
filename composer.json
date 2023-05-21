@@ -1,0 +1,41 @@
+{
+    "name": "elvis-s-lopes/laravel-postal-driver",
+    "description": "This library adds a 'postal' mail driver to Laravel.",
+    "keywords": ["laravel", "postal"],
+    "license": "MIT",
+    "require": {
+        "illuminate/mail": "^9.0||^10.0",
+        "illuminate/support": "^9.0||^10.0",
+        "guzzlehttp/guzzle": "^7.2"
+    },
+    "require-dev": {
+        "illuminate/container": "^9.0||^10.0",
+        "illuminate/filesystem": "^9.0||^10.0",
+        "phpunit/phpunit": "^9.5.8||^10.0",
+        "laravel/helpers": "^1.2",
+        "vlucas/phpdotenv": "^5.4.1"
+    },
+    "autoload": {
+        "psr-4": {
+            "Lopes\\LaravelPostalDriver\\": "src"
+        }
+    },
+    "authors": [
+        {
+            "name": "Elvis Lopes",
+            "email": "elvislopes225@gmail.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/elvis-s-lopes/laravel-postal-driver/issues"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Lopes\\LaravelPostalDriver\\PostalTransportServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
