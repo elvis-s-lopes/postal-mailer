@@ -52,34 +52,17 @@ class PostalTransport extends AbstractTransport
     protected function doSend(SentMessage $message): void
     {
         $email = MessageConverter::toEmail($message->getOriginalMessage());
+        
 
-        $data = [
-            'personalizations' => $this->getPersonalizations($email),
-            'from' => $this->getFrom($email),
-            'subject' => $email->getSubject(),
-        ];
-
-        if ($contents = $this->getContents($email)) {
-            $data['content'] = $contents;
-        }
-
-        if ($reply_to = $this->getReplyTo($email)) {
-            $data['reply_to'] = $reply_to;
-        }
-
-        $attachments = $this->getAttachments($email);
-        if (count($attachments) > 0) {
-            $data['attachments'] = $attachments;
-        }
-
-        $data = $this->setParameters($email, $data);
+        $body = $this->getPayload($email);
+        
 
         $payload = [
             'headers' => [
-                'Authorization' => 'Bearer ' . $this->apiKey,
+                'X-Server-API-Key' => $this->apiKey,
                 'Content-Type' => 'application/json',
             ],
-            'json' => $data,
+            'body' => json_encode($body),
         ];
     
         $response = $this->post($payload);
@@ -95,9 +78,9 @@ class PostalTransport extends AbstractTransport
      */
     private function getPersonalizations(Email $email): array
     {
-        $personalization['to'] = $this->setAddress($email->getTo());
+          $personalization = $this->setAddress($email->getTo());
 
-        if (count($email->getCc()) > 0) {
+        /*if (count($email->getCc()) > 0) {
             $personalization['cc'] = $this->setAddress($email->getCc());
 
         }
@@ -105,9 +88,9 @@ class PostalTransport extends AbstractTransport
         if (count($email->getBcc()) > 0) {
             $personalization['bcc'] = $this->setAddress($email->getBcc());
 
-        }
+        }*/
 
-        return [$personalization];
+        return $personalization;
     }
 
     /**
@@ -118,7 +101,7 @@ class PostalTransport extends AbstractTransport
     {
         $recipients = [];
         foreach ($addresses as $address) {
-            $recipient = ['email' => $address->getAddress()];
+            $recipient = [$address->getAddress()];
             if ($address->getName() !== '') {
                 $recipient['name'] = $address->getName();
             }
@@ -215,61 +198,98 @@ class PostalTransport extends AbstractTransport
         return $dataPart->getMediaType() . '/' . $dataPart->getMediaSubtype();
     }
 
-    /**
-     * @param Email $email
-     * @param array $data
-     * @return array
-     */
-    private function setParameters(Email $email, array $data): array
+  
+
+  
+
+    private function getPayload(Email $email): array
     {
-        $smtp_api = [];
+        $headers = $email->getHeaders();
+        $html = $email->getHtmlBody();
+        if (null !== $html && \is_resource($html)) {
+            if (stream_get_meta_data($html)['seekable'] ?? false) {
+                rewind($html);
+            }
+            $html = stream_get_contents($html);
+        }
+        [$attachments, $inlines, $html] = $this->prepareAttachments($email, $html);
+
+        $payload = [
+            'from' => 'notificacao@tracker-net.app',
+            'to' => $this->getPersonalizations($email),
+            'subject' => $email->getSubject(),
+            'attachment' => $attachments,
+            'inline' => $inlines,
+        ];
+        if ($emails = $email->getCc()) {
+            $payload['cc'] = implode(',', $this->stringifyAddresses($emails));
+        }
+        if ($emails = $email->getBcc()) {
+            $payload['bcc'] = implode(',', $this->stringifyAddresses($emails));
+        }
+        if ($email->getTextBody()) {
+            $payload['plain_body'] = $email->getTextBody();
+        }
+        if ($html) {
+            $payload['html_body'] = $html;
+        }
+
+        $headersToBypass = ['from', 'to', 'cc', 'bcc', 'subject', 'content-type'];
+        foreach ($headers->all() as $name => $header) {
+            if (\in_array($name, $headersToBypass, true)) {
+                continue;
+            }
+
+            if ($header instanceof TagHeader) {
+                $payload[] = ['o:tag' => $header->getValue()];
+
+                continue;
+            }
+
+            if ($header instanceof MetadataHeader) {
+                $payload['v:'.$header->getKey()] = $header->getValue();
+
+                continue;
+            }
+
+            // Check if it is a valid prefix or header name according to postal API
+            $prefix = substr($name, 0, 2);
+            if (\in_array($prefix, ['h:', 't:', 'o:', 'v:']) || \in_array($name, ['recipient-variables', 'template', 'amp-html'])) {
+                $headerName = $header->getName();
+            } else {
+                $headerName = 'h:'.$header->getName();
+            }
+
+            $payload[$headerName] = $header->getBodyAsString();
+        }
+
+        return $payload;
+    }
+
+
+    private function prepareAttachments(Email $email, ?string $html): array
+    {
+        $attachments = $inlines = [];
         foreach ($email->getAttachments() as $attachment) {
-            $name = $attachment->getPreparedHeaders()->getHeaderParameter('Content-Disposition', 'filename');
-            if ($name === self::REQUEST_BODY_PARAMETER) {
-                $smtp_api = self::decode($attachment->getBody());
-            }
-        }
-
-        if (count($smtp_api) < 1) {
-            return $data;
-        }
-
-        foreach ($smtp_api as $key => $val) {
-            switch ($key) {
-                case 'api_key':
-                    $this->apiKey = $val;
-                    continue 2;
-                case 'personalizations':
-                    $this->setPersonalizations($data, $val);
-                    continue 2;
-                case 'attachments':
-                    $val = array_merge($this->attachments, $val);
-                    break;
-            }
-            Arr::set($data, $key, $val);
-        }
-
-        return $data;
-    }
-
-    /**
-     * @param array $data
-     * @param array $personalizations
-     * @return void
-     */
-    private function setPersonalizations(array &$data, array $personalizations): void
-    {
-        foreach ($personalizations as $index => $params) {
-            foreach ($params as $key => $val) {
-                if (in_array($key, ['to', 'cc', 'bcc'])) {
-                    Arr::set($data, 'personalizations.' . $index . '.' . $key, $val);
-                    ++$this->numberOfRecipients;
-                } else {
-                    Arr::set($data, 'personalizations.' . $index . '.' . $key, $val);
+            $headers = $attachment->getPreparedHeaders();
+            if ('inline' === $headers->getHeaderBody('Content-Disposition')) {
+                // replace the cid with just a file name (the only supported way by postal)
+                if ($html) {
+                    $filename = $headers->getHeaderParameter('Content-Disposition', 'filename');
+                    $new = basename($filename);
+                    $html = str_replace('cid:'.$filename, 'cid:'.$new, $html);
+                    $p = new \ReflectionProperty($attachment, 'filename');
+                    $p->setValue($attachment, $new);
                 }
+                $inlines[] = $attachment;
+            } else {
+                $attachments[] = $attachment;
             }
         }
+
+        return [$attachments, $inlines, $html];
     }
+
 
     /**
      * @param $payload
