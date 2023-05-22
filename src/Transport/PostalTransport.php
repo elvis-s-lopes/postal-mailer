@@ -22,7 +22,7 @@ class PostalTransport extends AbstractTransport
     }
 
  
-    const BASE_URL = 'https://postal.smartgps.com.br/api/v1/send/message';
+    const BASE_URL = 'https://postal.youserver.com.br/api/v1/send/message';
 
     /**
      * @deprecated use REQUEST_BODY_PARAMETER instead
